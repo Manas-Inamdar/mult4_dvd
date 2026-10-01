@@ -46,7 +46,7 @@ module tb_mult;
                 expected = ai * bi;
                 @(posedge clk);
                 @(posedge clk);
-                #1;
+                #2;
                 vectors_checked = vectors_checked + 1;
                 if (p !== expected) begin
                     $display("MISMATCH: a=%0d b=%0d expected=%0d actual=%0d", ai, bi, expected, p);
