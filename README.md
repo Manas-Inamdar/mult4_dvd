@@ -43,6 +43,35 @@ EDA work is performed inside the IIC-OSIC-TOOLS container under `/foss/designs`.
 
 Exact commands will be recorded here in the order they are actually run.
 
+### Part A RTL verification
+
+1. `iverilog -g2012 -s full_adder -o /tmp/full_adder_check rtl/full_adder.v`
+2. `iverilog -g2012 -o sim tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v`
+3. `vvp sim`
+	- Result: `PASS: 256 vectors checked, 0 errors`
+	- Generated: `mult.vcd`
+4. For the deliberate error test, temporarily changed `sum` in `rtl/full_adder.v` to `a ^ b`.
+5. `iverilog -g2012 -o sim_error tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v`
+6. `vvp sim_error`
+	- Result: `FAIL: 256 vectors checked, 95 errors`
+7. Restored `sum` to `a ^ b ^ cin`.
+8. Repeated the required RTL simulation commands.
+	- Result: `PASS: 256 vectors checked, 0 errors`
+9. Structural checks performed:
+	- counted 12 `full_adder` instances in `rtl/mult_array.v`;
+	- checked that `rtl/mult_array.v` contains no `*` operator;
+	- checked registered inputs/output and asynchronous active-low reset;
+	- compiled with `iverilog -g2012 -Wall`.
+
+### Part A evidence status
+
+- RTL PASS output: captured in the terminal log.
+- Deliberate-error FAIL output: captured in the terminal log.
+- `mult.vcd`: generated locally for GTKWave inspection.
+- Personal example: A = 7 and B = 9; hand calculation and waveform annotation require team review.
+- Waveform screenshot: requires GTKWave inspection and team capture/review.
+- Block diagram: requires team creation/review.
+
 ## Generated Results
 
 Generated synthesis, timing, physical-design, waveform, and report files will be added only after the corresponding workflow stages produce them.

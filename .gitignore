@@ -1,0 +1,4 @@
+sim
+sim_error
+*.vcd
+*.gtkw
