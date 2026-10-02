@@ -7,9 +7,9 @@
         |        +-Local Area, excluding submodules.
         |        | 
        54        - wires
-       84        - wire bits
+       80        - wire bits
        15        - public wires
-       45        - public wire bits
+       41        - public wire bits
         5        - ports
        18        - port bits
        63   740.71 cells

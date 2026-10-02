@@ -1,183 +1,410 @@
-# Digital VLSI Assignment: 4-bit Array Multiplier
+# Digital VLSI Assignment — 4-bit × 4-bit Array Multiplier
 
-## Team
+## 1. Introduction
 
-- Manas Inamdar - Roll No. 2023102052
-- Soham Jahagirdar - Roll No. 2023102046
+This report documents Parts A and B of a Digital VLSI assignment: the design,
+exhaustive functional verification, logic synthesis, and gate-level
+verification of a 4-bit × 4-bit unsigned structural array multiplier. The
+intended project flow is RTL design and verification, logic synthesis, static
+timing analysis, and physical design. Timing and physical-design results
+remain placeholders until those stages are independently rerun and verified.
 
-This is a two-person team project approved by the instructor.
+The team information already associated with this project is:
 
-## Project
+- Manas Inamdar — Roll No. 2023102052
+- Soham Jahagirdar — Roll No. 2023102046
 
-Design and verification of a 4-bit x 4-bit unsigned structural array multiplier producing an 8-bit registered product, followed by synthesis, static timing analysis, and RTL-to-GDSII physical design.
+The RTL is simulated with Icarus Verilog inside the existing
+`iic-osic-tools_xvnc` Docker container. The project is mounted at
+`/foss/designs/mult4_dvd` inside the container. GTKWave is available in the
+same environment for waveform inspection.
 
-## Technology and Library
+## 2. Design and Verification — Part A
 
-- Process: SkyWater SKY130, 130 nm
-- Standard-cell library: sky130_fd_sc_hd
-- Active PDK: sky130A
+### 2.1 Design Architecture
 
-## Required Toolchain
+The design accepts unsigned 4-bit operands `a` and `b` and produces an 8-bit
+registered product `p`.
 
-- Icarus Verilog and GTKWave
-- Yosys
-- OpenSTA
-- LibreLane
-- OpenROAD
-- KLayout
-- Magic
-- Netgen
-- IIC-OSIC-TOOLS Docker environment
+Each bit of `a` is ANDed with each bit of `b`, producing four rows of four
+partial-product bits. This gives 4 × 4 = 16 RTL AND operations. The rows are
+combined by three rows of four explicitly instantiated full adders, giving 12
+full-adder instances. At RTL these are operations and module instances; they
+are not claims about the eventual number of physical standard-cell gates.
 
-## Working Environment
+The input operands are captured in `a_reg` and `b_reg`. The combinational
+array operates on those registered operands, and `p_reg` stores the result.
+Reset is asynchronous and active-low. With inputs presented between clock
+edges, the input registers capture them on the first rising edge and the
+output register updates on the second rising edge, giving the required
+two-cycle architectural latency.
 
-EDA work is performed inside the IIC-OSIC-TOOLS container under `/foss/designs`.
+### 2.2 RTL Files
 
-## Repository
+| File | Role |
+|---|---|
+| `rtl/full_adder.v` | Structural one-bit full adder with sum and carry outputs. |
+| `rtl/mult_array.v` | Four-row partial-product array, three four-bit full-adder rows, and registered interface. |
+| `tb/tb_mult.v` | Exhaustive 256-vector testbench, golden-value comparison, and VCD generation. |
 
-- Repository name: `mult4_dvd`
-- GitHub owner: `Manas-Inamdar`
-- Visibility: private
+The full adder implements:
 
-## Command History
+```verilog
+sum  = a ^ b ^ cin
+cout = (a & b) | (a & cin) | (b & cin)
+```
 
-Exact commands will be recorded here in the order they are actually run.
+### 2.3 Structural Verification
 
-### Part A RTL verification
+The following properties were checked directly from the current source files.
 
-1. `iverilog -g2012 -s full_adder -o /tmp/full_adder_check rtl/full_adder.v`
-2. `iverilog -g2012 -o sim tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v`
-3. `vvp sim`
-	- Result: `PASS: 256 vectors checked, 0 errors`
-	- Generated: `mult.vcd`
-4. For the deliberate error test, temporarily changed `sum` in `rtl/full_adder.v` to `a ^ b`.
-5. `iverilog -g2012 -o sim_error tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v`
-6. `vvp sim_error`
-	- Result: `FAIL: 256 vectors checked, 95 errors`
-7. Restored `sum` to `a ^ b ^ cin`.
-8. Repeated the required RTL simulation commands.
-	- Result: `PASS: 256 vectors checked, 0 errors`
-9. Structural checks performed:
-	- counted 12 `full_adder` instances in `rtl/mult_array.v`;
-	- checked that `rtl/mult_array.v` contains no `*` operator;
-	- checked registered inputs/output and asynchronous active-low reset;
-	- compiled with `iverilog -g2012 -Wall`.
+| Property | Verified result |
+|---|---|
+| Input width | 4 bits for `a`, 4 bits for `b` |
+| Output width | 8 bits for `p` |
+| AND operations in `mult_array.v` | 16 |
+| Full-adder instances | 12 |
+| Multiplication operator in `mult_array.v` | 0 |
+| Input registers | `a_reg[3:0]`, `b_reg[3:0]` present |
+| Output register | `p_reg[7:0]` present |
+| Reset | Asynchronous active-low `negedge rst_n` |
+| Clock period | 10 ns (`forever #5 clk = ~clk`) |
+| Test vectors | 256 combinations |
+| VCD file | `mult.vcd` generated |
 
-### Part A evidence status
+The testbench uses multiplication only to generate the golden reference
+value with `expected = ai * bi`; the multiplier RTL contains no multiplication
+operator.
 
-- RTL PASS output: captured in the terminal log.
-- Deliberate-error FAIL output: captured in the terminal log.
-- `mult.vcd`: generated locally for GTKWave inspection.
-- Personal example: A = 7 and B = 9; hand calculation and waveform annotation require team review.
-- Waveform screenshot: requires GTKWave inspection and team capture/review.
-- Block diagram: requires team creation/review.
+### 2.4 Functional Verification
 
-## Part B - Logic synthesis with Yosys
+The testbench iterates over every value of `a` from 0 through 15 and every
+value of `b` from 0 through 15. Therefore, 16 × 16 = 256 input combinations
+are checked. Each result is compared against the expected product, and the
+testbench emits exactly one final PASS or FAIL summary.
 
-### Synthesis command
+The correct RTL simulation produced:
 
-The synthesis script was run inside IIC-OSIC-TOOLS from `/foss/designs/mult4_dvd`:
+```text
+PASS: 256 vectors checked, 0 errors
+```
 
-`yosys -c synth/synth.tcl`
+The commands used inside the existing container were:
 
-Yosys completed successfully and generated:
+```bash
+cd /foss/designs/mult4_dvd
+/foss/tools/bin/iverilog -g2012 -Wall -s full_adder \
+  -o /tmp/part_a_full_adder_check rtl/full_adder.v
+/foss/tools/bin/iverilog -g2012 -Wall \
+  -o /tmp/part_a_correct \
+  tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v
+/foss/tools/bin/vvp /tmp/part_a_correct
+```
 
-- `synth/mult_array_netlist.v`
-- `synth/mult_array_stat.rpt`
+The final corrected run generated `mult.vcd` in the project directory.
 
-The generated netlist contains SKY130 standard-cell instances from `sky130_fd_sc_hd`, including `sky130_fd_sc_hd__dfrtp_1` flip-flops.
+### 2.5 Deliberate Error Test
 
-### Synthesis statistics from `synth/mult_array_stat.rpt`
+The assignment requires an intentional full-adder error. For this experiment,
+the sum equation was temporarily changed from:
 
-- Total cells: 63
-- Flip-flops: 16 (`sky130_fd_sc_hd__dfrtp_1`)
-- Total cell area: 740.7104 um^2
-- Flip-flop area: 400.3840 um^2
-- Flip-flop area percentage: 54.05%
-- Three most-used cell types:
-	- `sky130_fd_sc_hd__dfrtp_1`: 16
-	- `sky130_fd_sc_hd__nand2_1`: 8
-	- `sky130_fd_sc_hd__a21oi_1`: 6
+```verilog
+assign sum = a ^ b ^ cin;
+```
 
-### Gate-level simulation
+to:
 
-The first two attempts using a shell variable for `CELLS` were not usable because the nested PowerShell/Docker wrapper expanded the variable before Bash received it, producing `/primitives.v`. No netlist failure was inferred from those attempts.
+```verilog
+assign sum = a ^ b;
+```
 
-The successful command used the same required SKY130 models with their verified container paths and ran in a temporary directory so the Part A waveform was protected:
+The corrupted version was compiled and run in a container temporary directory
+so the project waveform was not overwritten:
 
-`iverilog -g2012 -DFUNCTIONAL -DUNIT_DELAY=#1 -o gls /foss/designs/mult4_dvd/tb/tb_mult.v /foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v /foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v /foss/designs/mult4_dvd/synth/mult_array_netlist.v`
+```bash
+cd /foss/designs/mult4_dvd
+/foss/tools/bin/iverilog -g2012 -Wall \
+  -o /tmp/part_a_error \
+  tb/tb_mult.v rtl/full_adder.v rtl/mult_array.v
+mkdir -p /tmp/part_a_error_run
+cd /tmp/part_a_error_run
+/foss/tools/bin/vvp /tmp/part_a_error
+```
 
-`vvp gls`
+The actual result was:
 
-The temporary gate-level simulation produced:
+```text
+FAIL: 256 vectors checked, 95 errors
+```
 
-`PASS: 256 vectors checked, 0 errors`
+The correct `a ^ b ^ cin` equation was restored, and the corrected simulation
+was run again with the PASS result shown above. No permanent terminal log was
+created; no log path is claimed here.
 
-The SKY130 functional flip-flop model has `UNIT_DELAY=#1`. The original `#1` testbench comparison could race the delayed output update, so the comparison settling delay was changed to `#2`. RTL simulation was rerun and still produced:
+### 2.6 Hand-Worked Example — A = 7, B = 9
 
-`PASS: 256 vectors checked, 0 errors`
+For the required personal example:
 
-The gate-level `mult.vcd` was generated under `/tmp/mult4_dvd_gls`. The project `mult.vcd` was regenerated by the confirming RTL run and remained 66,410 bytes; the temporary gate-level VCD did not overwrite it.
+```text
+A = 7 = 0111
+B = 9 = 1001
+```
 
-## Part C - Static timing analysis with OpenSTA
+The bits of `B` generate the following aligned rows:
 
-OpenSTA was run inside IIC-OSIC-TOOLS from `/foss/designs/mult4_dvd` using only the SKY130A typical Liberty file:
-
-`$PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib`
-
-### Run 1: T = 10.00 ns
-
-Command actually run:
-
-`sta sta/sta.tcl`
-
-The first run printed:
-
-`worst slack max 7.41`
+- `b[0] = 1` generates `00000111`.
+- `b[1] = 0` generates `00000000`.
+- `b[2] = 0` generates `00000000`.
+- `b[3] = 1` generates `00111000`.
 
 Therefore:
 
-- `WNS_10 = 7.41 ns`
-- `T_min = 10.00 - 7.41 = 2.59 ns`
-- `F_max = 1000 / 2.59 = 386.10 MHz`
+```text
+        00000111
+        00000000
+        00000000
+        00111000
+        --------
+        00111111
+```
 
-### Run 2: rounded T_min
+Thus:
 
-The exact calculated minimum period was rounded to `2.59 ns`, and `sta/sta.tcl` was rerun with that period using the same command:
+```text
+7 × 9 = 63 = 00111111
+```
 
-`sta sta/sta.tcl`
+This matches the RTL wiring: `pp0` and `pp3` contain `0111`, while `pp1` and
+`pp2` are zero. The three four-bit full-adder rows combine the shifted rows;
+the final product concatenation is
+`{carry3[4], sum3[3:0], sum2[0], sum1[0], pp0[0]}`.
 
-The second run printed:
+### 2.7 Waveform Verification
 
-`worst slack max -0.00`
+The correct simulation generated `mult.vcd`. Its top-level waveform contains
+`clk`, `rst_n`, `a`, `b`, and `p`; the dump also contains `a_reg`, `b_reg`,
+`p_reg`, partial products, carries, sums, and full-adder signals.
 
-The final timing report shows the critical data-path slack as `0.000 ns` with status `VIOLATED` due to rounding/display precision, which is approximately zero as required.
+The inspected `A=7`, `B=9` transaction showed approximately:
 
-### Critical path
+```text
+input assignment  = 2437 ns
+first rising edge  = 2445 ns
+second rising edge = 2455 ns
+p = 63 (0x3F)     = 2455 ns
+```
 
-The final `sta/mult_array_timing.rpt` data path is:
+This demonstrates the required two-rising-edge latency.
 
-- Start point: `_087_` (`sky130_fd_sc_hd__dfrtp_1` launch flip-flop)
-- End point: `_100_` (`sky130_fd_sc_hd__dfrtp_1` capture flip-flop)
-- Ordered cells: `_087_`, `_039_` (`sky130_fd_sc_hd__clkinv_1`), `_047_` (`sky130_fd_sc_hd__o311ai_0`), `_050_` (`sky130_fd_sc_hd__a21oi_1`), `_063_` (`sky130_fd_sc_hd__maj3_1`), `_064_` (`sky130_fd_sc_hd__xnor2_1`), `_073_` (`sky130_fd_sc_hd__maj3_1`), `_075_` (`sky130_fd_sc_hd__maj3_1`), `_079_` (`sky130_fd_sc_hd__xnor3_1`), `_100_`
-- Number of standard-cell instances on the path: 10
-- Combinational standard cells between the two flip-flops: 8
-- Reported data arrival time: 2.457 ns at the 2.59 ns run
+```text
+[PART A FIGURE TODO: Insert the student-captured GTKWave screenshot with
+the two-cycle latency marked. A raw capture is currently available at
+pics/part_a/gtkwave_pic.png; this is not the annotated final figure.]
+```
 
-The Part B netlist is flattened, so OpenSTA cannot directly report original `full_adder` instances. The path endpoint is the flattened signal `fa_row3_3.sum`; the eight intervening standard cells are attributable to the flattened arithmetic/full-adder logic feeding that output. This is an actual standard-cell count, not a claim that the netlist contains eight preserved full-adder instances. The conceptual estimate is approximately `2N = 8` full-adder delays for `N=4`; the observed path is broadly consistent with a multi-row arithmetic path, but the mapped-cell count is not numerically identical to the conceptual full-adder-delay estimate.
+### 2.8 Block Diagram
 
-### Part C results
+The required architectural diagram should show:
 
-- Worst slack at T = 10 ns: `7.41 ns`
-- T_min: `2.59 ns`
-- F_max: `386.10 MHz`
-- Slack at T = T_min: `-0.00 ns` from `report_worst_slack`; `0.000 ns` on the critical data path report
-- Critical path start: `_087_`
-- Critical path end: `_100_`
-- Critical path cells: `10`
-- Latency: `2 x 2.59 = 5.18 ns`
-- Throughput: `1000 / 2.59 = 386.10 million results/second`
+```text
+              +-------------+
+A[3:0] ------>| A register  |---+
+              +-------------+   |
+                                v
+                         16 AND operations
+                         / partial products
+                                |
+                                v
+                         12-full-adder array
+                                |
+                                v
+              +-------------+  |
+B[3:0] ------>| B register  |--+
+              +-------------+
 
-## Generated Results
+                         +-------------+
+                         | P register  |----> P[7:0]
+                         +-------------+
 
-Generated synthesis, timing, physical-design, waveform, and report files will be added only after the corresponding workflow stages produce them.
+Clock connects to the input and output registers. `rst_n` is an
+asynchronous active-low reset for all registers.
+```
+
+```text
+[PART A FIGURE TODO: Insert a clean block diagram of the multiplier
+architecture. The final diagram will be prepared manually by the student.]
+```
+
+## 3. Synthesis — Part B
+
+Part B was rerun from the current Part A RTL using Yosys and the required
+SKY130A high-density standard-cell library. The container defaults to the
+IHP SG13G2 PDK, so the synthesis command explicitly selects SKY130A without
+changing the container's global environment.
+
+### 3.1 Synthesis Environment and Liberty
+
+| Item | Value |
+|---|---|
+| Container | `iic-osic-tools_xvnc` |
+| Project path in container | `/foss/designs/mult4_dvd` |
+| PDK root | `/foss/pdks` |
+| PDK | `sky130A` |
+| Standard-cell library | `sky130_fd_sc_hd` |
+| Liberty | `/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib` |
+| Standard-cell Verilog models | `/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/` |
+
+### 3.2 Synthesis Flow and Commands
+
+The rebuilt `synth/synth.tcl` follows the required sequence: read the RTL,
+flatten the `mult_array` hierarchy, map flip-flops with `dfflibmap`, map
+combinational logic with `abc`, remove unused logic, print Liberty-based
+statistics, and write the mapped Verilog netlist.
+
+The exact synthesis command was:
+
+```bash
+cd /foss/designs/mult4_dvd
+env PDK_ROOT=/foss/pdks PDK=sky130A STD_CELL_LIBRARY=sky130_fd_sc_hd \
+  /foss/tools/bin/yosys -c synth/synth.tcl \
+  2>&1 | tee synth/part_b_synthesis.log
+```
+
+The generated artifacts are `synth/mult_array_netlist.v` and
+`synth/mult_array_stat.rpt`. The complete captured Yosys output is in
+`synth/part_b_synthesis.log`.
+
+### 3.3 Fresh Synthesis Results
+
+The following values come from the regenerated `synth/mult_array_stat.rpt`:
+
+| Metric | Value |
+|---|---:|
+| Total synthesized cells | 63 cells |
+| Flip-flops | 16 cells |
+| Logic/combinational cells | 47 cells |
+| Total cell area | 740.710400 µm² |
+| Sequential area | 400.384000 µm² |
+| Sequential area percentage | 54.05% |
+| Gate-level vectors checked | 256 |
+| Gate-level errors | 0 |
+
+The 16 sequential bits are the four bits of `a_reg`, four bits of `b_reg`,
+and eight bits of `p_reg`. The logic-cell count is `63 − 16 = 47`, which is
+the value used in the Question 1 answer in Section 6. The sequential-area
+percentage, 54.05%, is used in the Question 3 answer in Section 6.
+
+Because the synthesis flow uses `synth -flatten`, the twelve RTL
+`full_adder` instances are absorbed into the top-level logic. The generated
+netlist contains only the top module `mult_array`, with no remaining
+`full_adder` hierarchy. The mapped total of 63 cells includes the 16 mapped
+flip-flops and 47 combinational standard cells.
+
+### 3.4 Gate-Level Simulation
+
+The fresh netlist was simulated with the current exhaustive testbench and the
+SKY130A standard-cell models. The run used a separate temporary directory so
+that the Part A `mult.vcd` was not overwritten.
+
+The exact compile and run commands were:
+
+```bash
+cd /foss/designs/mult4_dvd
+rm -rf /tmp/part_b_gate_run
+mkdir -p /tmp/part_b_gate_run
+/foss/tools/bin/iverilog -g2012 -Wall \
+  -o /tmp/part_b_gate_sim \
+  tb/tb_mult.v synth/mult_array_netlist.v \
+  /foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v \
+  /foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v \
+  2>&1 | tee synth/part_b_gate_compile.log
+cd /tmp/part_b_gate_run
+/foss/tools/bin/vvp /tmp/part_b_gate_sim \
+  2>&1 | tee /foss/designs/mult4_dvd/synth/part_b_gate_sim.log
+```
+
+The actual result was:
+
+```text
+PASS: 256 vectors checked, 0 errors
+```
+
+No extra settling delay was required for this SKY130 functional-model run.
+The standard-cell models produced compile-time timescale and timing-expression
+warnings only; the testbench still observed the registered two-cycle
+architectural behavior. The compile warnings are captured in
+`synth/part_b_gate_compile.log`, and the gate-level result is captured in
+`synth/part_b_gate_sim.log`.
+
+## 4. Timing — Part C
+
+Part C will be documented after static timing analysis is independently rerun
+and verified. No Part C numerical result is claimed in this report.
+
+## 5. Physical Design — Part D
+
+Part D has not been performed as part of this report. Existing physical-design
+artifacts are not used as Part D results here. A correct SKY130A physical-design
+run will be documented only after it is explicitly authorized and verified.
+
+## 6. Answers to Questions 1–6
+
+### Question 1
+
+The mapped logic/combinational standard-cell count is:
+
+```text
+63 total synthesized cells − 16 flip-flops = 47 logic/combinational cells
+```
+
+The 16 AND operations and 12 full-adder instances describe the RTL
+structure; they are not a direct count of technology-library cells. Synthesis
+maps and optimizes their Boolean logic into SKY130 standard cells. A single
+RTL full adder may use multiple cells, different operations may be merged or
+optimized, and additional cells may implement the synthesized Boolean
+functions. Therefore, 47 is the mapped logic-cell count, not a claim that the
+original array contains 47 gates.
+
+### Question 2
+
+```text
+[QUESTION 2 TODO: Complete after the remaining assignment stages are verified.]
+```
+
+### Question 3
+
+The percentage of total cell area occupied by flip-flops is:
+
+```text
+(400.384000 / 740.710400) × 100 ≈ 54.05%
+```
+
+The design has 8 bits of registered input (`a_reg` and `b_reg`) and 8 bits
+of registered output (`p_reg`), for 16 flip-flops total. Because the
+combinational multiplier is small, the fixed area of these registers forms a
+large fraction of the total cell area.
+
+### Questions 4–6
+
+```text
+[QUESTIONS 4–6 TODO: Complete after Parts C–D are independently verified.]
+```
+
+```text
+[PART C/D TODO: Do not add timing or physical-design answers until those
+stages are independently verified.]
+```
+
+## 7. Conclusion
+
+The structural 4-bit × 4-bit unsigned multiplier has been rebuilt and
+exhaustively verified over all 256 input combinations. The deliberate
+full-adder error produced the required 95-vector failure result, the correct
+equation was restored, and the final corrected simulation passed with zero
+errors. Part B then produced a fresh 63-cell SKY130A mapped netlist and a
+gate-level PASS over all 256 vectors. The 7 × 9 example and two-cycle
+waveform behavior are documented.
+
+The Part A waveform annotation and final block-diagram figure remain manual
+evidence items. This report does not claim that the complete RTL-to-GDSII
+flow is finished.

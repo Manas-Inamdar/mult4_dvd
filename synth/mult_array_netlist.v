@@ -52,14 +52,14 @@ module mult_array(clk, rst_n, a, b, p);
   wire _038_;
   wire [3:0] a_reg;
   wire [3:0] b_reg;
-  wire [4:0] c3;
+  wire [4:0] carry3;
   wire \fa_row1_0.sum ;
   wire \fa_row2_0.sum ;
   wire \fa_row3_0.sum ;
   wire \fa_row3_1.sum ;
   wire \fa_row3_2.sum ;
   wire \fa_row3_3.sum ;
-  wire [7:0] p_comb;
+  wire [3:0] pp0;
   sky130_fd_sc_hd__clkinv_1 _039_ (
     .A(a_reg[1]),
     .Y(_000_)
@@ -71,7 +71,7 @@ module mult_array(clk, rst_n, a, b, p);
   sky130_fd_sc_hd__and2_0 _041_ (
     .A(a_reg[0]),
     .B(b_reg[0]),
-    .X(p_comb[0])
+    .X(pp0[0])
   );
   sky130_fd_sc_hd__and2_0 _042_ (
     .A(a_reg[1]),
@@ -271,7 +271,7 @@ module mult_array(clk, rst_n, a, b, p);
     .A1(_030_),
     .A2(_034_),
     .B1(_026_),
-    .Y(c3[4])
+    .Y(carry3[4])
   );
   sky130_fd_sc_hd__xor2_1 _077_ (
     .A(_031_),
@@ -373,7 +373,7 @@ module mult_array(clk, rst_n, a, b, p);
   );
   sky130_fd_sc_hd__dfrtp_1 _094_ (
     .CLK(clk),
-    .D(p_comb[0]),
+    .D(pp0[0]),
     .Q(p[0]),
     .RESET_B(rst_n)
   );
@@ -415,10 +415,9 @@ module mult_array(clk, rst_n, a, b, p);
   );
   sky130_fd_sc_hd__dfrtp_1 _101_ (
     .CLK(clk),
-    .D(c3[4]),
+    .D(carry3[4]),
     .Q(p[7]),
     .RESET_B(rst_n)
   );
-  assign p_comb[7:1] = { c3[4], \fa_row3_3.sum , \fa_row3_2.sum , \fa_row3_1.sum , \fa_row3_0.sum , \fa_row2_0.sum , \fa_row1_0.sum  };
-  assign c3[0] = 1'h0;
+  assign carry3[0] = 1'h0;
 endmodule

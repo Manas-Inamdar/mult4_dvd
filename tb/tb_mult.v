@@ -1,10 +1,10 @@
 `timescale 1ns/1ps
 
 module tb_mult;
-    reg clk;
-    reg rst_n;
-    reg [3:0] a;
-    reg [3:0] b;
+    reg        clk;
+    reg        rst_n;
+    reg  [3:0] a;
+    reg  [3:0] b;
     wire [7:0] p;
 
     integer ai;
@@ -14,11 +14,11 @@ module tb_mult;
     reg [7:0] expected;
 
     mult_array dut (
-        .clk(clk),
+        .clk  (clk),
         .rst_n(rst_n),
-        .a(a),
-        .b(b),
-        .p(p)
+        .a    (a),
+        .b    (b),
+        .p    (p)
     );
 
     initial begin
@@ -44,22 +44,28 @@ module tb_mult;
                 a = ai;
                 b = bi;
                 expected = ai * bi;
+
+                // Inputs are presented between edges; two edges complete the pipeline.
                 @(posedge clk);
                 @(posedge clk);
                 #2;
+
                 vectors_checked = vectors_checked + 1;
                 if (p !== expected) begin
-                    $display("MISMATCH: a=%0d b=%0d expected=%0d actual=%0d", ai, bi, expected, p);
+                    $display(
+                        "MISMATCH: a=%0d b=%0d expected=%0d actual=%0d",
+                        ai, bi, expected, p
+                    );
                     errors = errors + 1;
                 end
             end
         end
 
-        if (errors == 0) begin
+        if (errors == 0)
             $display("PASS: %0d vectors checked, %0d errors", vectors_checked, errors);
-        end else begin
+        else
             $display("FAIL: %0d vectors checked, %0d errors", vectors_checked, errors);
-        end
+
         $finish;
     end
 endmodule
