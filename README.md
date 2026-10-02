@@ -2,12 +2,12 @@
 
 ## 1. Introduction
 
-This report documents Parts A and B of a Digital VLSI assignment: the design,
+This report documents Parts A through D of a Digital VLSI assignment: the design,
 exhaustive functional verification, logic synthesis, and gate-level
 verification of a 4-bit × 4-bit unsigned structural array multiplier. The
 intended project flow is RTL design and verification, logic synthesis, static
-timing analysis, and physical design. Physical-design results remain a
-placeholder until that stage is independently rerun and verified.
+timing analysis, and physical design. The verified physical-design results are
+documented in Section 5.
 
 The team information already associated with this project is:
 
@@ -445,9 +445,143 @@ full-adder modules and their count must not be called a full-adder count.
 
 ## 5. Physical Design — Part D
 
-Part D has not been performed as part of this report. Existing physical-design
-artifacts are not used as Part D results here. A correct SKY130A physical-design
-run will be documented only after it is explicitly authorized and verified.
+Part D was redone from the assignment PDF using LibreLane v3.1.0.dev3 in the
+existing `iic-osic-tools_xvnc` container. The official runs use the two RTL
+source files required by the PDF and do not modify the verified Part A, Part B,
+or Part C source artifacts.
+
+### 5.1 Existing PNR Audit
+
+The pre-existing runs `pnr/runs/RUN_2026-10-02_01-52-11` and
+`pnr/runs/RUN_2026-10-02_02-11-14` resolved to `ihp-sg13g2` with
+`sg13g2_stdcell`, even though the assignment requires SKY130A. The earlier
+`part_d_*` runs used the mapped Part B netlist and were also discarded because
+the PDF requires RTL input files. None of those runs, metrics, GDS files, or
+screenshots is used as official Part D evidence; all were retained for audit.
+
+### 5.2 PNR Configuration
+
+The corrected active configuration is `pnr/config.json`:
+
+| Setting | Value |
+|---|---|
+| Design and RTL inputs | `mult_array`, `../rtl/full_adder.v`, `../rtl/mult_array.v` |
+| PDK / standard-cell library | `sky130A` / `sky130_fd_sc_hd` |
+| Clock port | `clk` |
+| Floorplan sizing | Absolute, `DIE_AREA = [0, 0, 150, 150]` |
+| Final clock period in the active config | `6.5 ns` (initial attempt was `3.5 ns`) |
+| Liberty corner | `sky130_fd_sc_hd__tt_025C_1v80.lib` |
+
+Part C measured `T_min = 2.590 ns`. The initial Part D period was computed as
+`1.2 × 2.590 = 3.108 ns`, rounded up to the next 0.5 ns step, `3.5 ns`.
+Every LibreLane invocation explicitly selected `PDK_ROOT=/foss/pdks`,
+`PDK=sky130A`, and `STD_CELL_LIBRARY=sky130_fd_sc_hd`.
+
+### 5.3 Clock-Period Attempts and Signoff
+
+Each period was run from the same RTL configuration, advancing by exactly
+0.5 ns after a setup failure. DRC is the pair of Magic and KLayout checks; LVS
+is the Netgen result.
+
+| Clock period | Setup WNS/slack (ns) | Max-slew count | DRC | LVS | Outcome |
+|---:|---:|---:|---:|---:|---|
+| 3.5 ns | -2.029468 | 11 | 0 | 0 | Setup failed |
+| 4.0 ns | -1.529468 | 11 | 0 | 0 | Setup failed |
+| 4.5 ns | -1.028412 | 11 | 0 | 0 | Setup failed |
+| 5.0 ns | -0.528412 | 11 | 0 | 0 | Setup failed |
+| 5.5 ns | -0.145564 | 11 | 0 | 0 | Setup failed |
+| 6.0 ns | -0.151290 | 11 | 0 | 0 | Setup failed |
+| **6.5 ns** | **+0.041334** | **11** | **0** | **0** | **PASS** |
+
+All seven runs reached final GDS/signoff metrics before the deferred setup
+checker determined the outcome; the first six were rejected for negative setup
+slack and 6.5 ns was the first passing setup result.
+
+The first successful RTL-based run is `pnr/runs/part_d_rtl_6p5`. Its final
+worst setup slack is `0.041334 ns` at the slow-slow 100 °C corner, with zero
+setup and hold violation counts. Magic DRC, KLayout DRC, and Netgen LVS all
+report zero errors. The metrics retain a max-slew count of 11; this is outside
+the PDF's stated success criteria and is reported here rather than hidden.
+
+The same-run artifacts copied for review are:
+
+- `pnr/metrics.json` — copied from `pnr/runs/part_d_rtl_6p5/final/metrics.json`.
+- `pnr/mult_array.gds` — copied from `pnr/runs/part_d_rtl_6p5/final/gds/mult_array.gds`.
+
+Both copies are non-empty and byte-for-byte identical to their source files.
+The run directories remain local evidence and are not part of the final
+artifact set.
+
+### 5.4 Part D Results Table
+
+| Metric | Value |
+|---|---:|
+| CLOCK_PERIOD used | 6.5 ns |
+| Number of RTL-based runs needed | 7 |
+| Core area | 17,759.5 µm² |
+| Cells after synthesis (Part B) | 63 cells |
+| Cells after place and route | 1,893 instances |
+| Kinds of cells added | 1,301 decap, 257 fill, 245 tap, 22 buffers |
+| Routed wirelength | 2,334 µm |
+| Final setup slack | 0.041334 ns |
+| Post-route F_max | 154.83 MHz |
+| F_max from Part C | 386.10 MHz |
+| DRC errors | 0 |
+| LVS errors | 0 |
+
+The final die area is 22,500 µm² (150 µm × 150 µm), and reported instance
+utilization is 6.98887%.
+
+### 5.5 Cell Count and Physical Support
+
+Part B mapped 63 cells: 16 flip-flops and 47 logic cells. The final RTL-based
+physical database contains 1,893 SKY130 standard-cell instances. The cell
+frequency report identifies 1,301 decap cells, 257 fill cells, and 245 tap
+cells. It also identifies 17 data timing-repair buffers, 3 clock buffers, and
+2 clock-delay buffers, or 22 buffers total.
+
+The RTL-based LibreLane mapping itself contains 16 sequential cells, 49
+multi-input combinational cells, and 3 inverters before physical support is
+counted. This small mapping difference from the independently verified Part B
+count of 63 is a synthesis-flow mapping detail; the Part B result remains the
+assignment's baseline for the comparison table.
+
+Physical implementation adds support structures that are not represented by
+the Part B mapped-cell total. Decaps provide local charge storage for power
+integrity, fill cells satisfy layout density and continuity requirements, tap
+cells tie wells and substrate to the supply rails, and buffers/clock buffers
+repair fanout, transition, and clock-tree delay. The metrics' `fill_cell`
+classification includes both decap and fill masters, so those categories are
+reported from the cell-frequency report and must not be added to the total a
+second time.
+
+### 5.6 Post-Route Frequency and Part C Comparison
+
+Using the PDF's required calculation and the final measured slack:
+
+```text
+F_max,post-route = 1000 / (6.5 ns − 0.041334 ns)
+                 = 154.83 MHz
+```
+
+Part C reported `F_max = 386.10 MHz` from the pre-layout mapped-netlist STA.
+The post-route value is lower because placement, routed metal, and extracted
+resistance/capacitance add delay; clock and timing-repair buffers also add
+physical implementation delay. The two values therefore measure different
+stages of the flow.
+
+### 5.7 KLayout Inspection
+
+The final RTL-based SKY130A GDS was rendered and visually inspected. The
+evidence views are:
+
+- `pics/part_d/klayout_whole_die.png` — whole-die view from the final run's
+  KLayout render.
+- `pics/part_d/klayout_zoomed.png` — zoomed view derived from that same final
+  KLayout render for detailed routing and cell inspection.
+
+The images correspond to `pnr/runs/part_d_rtl_6p5/final/gds/mult_array.gds`; no
+older IHP or mapped-netlist layout image is used.
 
 ## 6. Answers to Questions 1–6
 
@@ -492,15 +626,22 @@ large fraction of the total cell area.
 
 ### Question 4
 
-```text
-[QUESTION 4 TODO: Complete after Part D is independently verified.]
-```
+The post-route maximum frequency is lower because placement, routed metal, and
+extracted parasitic resistance and capacitance add delay that is absent from
+the pre-layout Part C estimate: `154.83 MHz` after routing versus `386.10 MHz`
+from Part C. The final physical database adds 1,301 decap cells for local
+power storage, 257 fill cells for density and continuity, 245 tap cells for
+well/substrate ties, 17 data timing-repair buffers, 3 clock buffers, and 2
+clock-delay buffers for fanout, transition, skew, and clock-tree repair.
 
 ### Question 5
 
-```text
-[QUESTION 5 TODO: Complete after Part D is independently verified.]
-```
+DRC checks whether the layout obeys the process design rules for spacing,
+width, enclosure, connectivity, and related manufacturing constraints. LVS
+compares the extracted layout netlist with the intended design netlist to
+verify that the devices and connections match. Both must pass before
+manufacture: DRC establishes that the geometry is manufacturable, while LVS
+establishes that the manufactured geometry implements the intended circuit.
 
 ### Question 6
 
@@ -515,10 +656,9 @@ Approx. critical path = 2N       = 2(8) = 16 full-adder delays
 These are architectural scaling estimates from the structural-array formulas,
 not measured post-synthesis or post-route standard-cell counts.
 
-```text
-[PART D TODO: Do not add physical-design answers until Part D is independently
-verified.]
-```
+Part D is complete for the verified 6.5 ns RTL-based SKY130A run. The run directories
+remain local evidence and are intentionally not included in the report's
+artifact list.
 
 ## 7. Conclusion
 
@@ -528,9 +668,11 @@ full-adder error produced the required 95-vector failure result, the correct
 equation was restored, and the final corrected simulation passed with zero
 errors. Part B then produced a fresh 63-cell SKY130A mapped netlist and a
 gate-level PASS over all 256 vectors. Part C measured 7.410 ns worst slack at
-10.00 ns, a 2.590 ns minimum period, and 386.10 MHz maximum frequency. The
-7 × 9 example and two-cycle waveform behavior are documented.
+10.00 ns, a 2.590 ns minimum period, and 386.10 MHz maximum frequency. Part D
+then completed the corrected RTL-based SKY130A physical-design run at 6.5 ns
+with positive setup slack and zero Magic/KLayout DRC and LVS errors. The 7 × 9 example, two-cycle waveform
+behavior, final GDS, and KLayout views are documented.
 
 The Part A waveform annotation and final block-diagram figure remain manual
-evidence items. This report does not claim that the complete RTL-to-GDSII
-flow is finished.
+evidence items. The verified Part D run is complete; its generated run
+directories and intermediate logs remain local evidence.
