@@ -6,8 +6,8 @@ This report documents Parts A and B of a Digital VLSI assignment: the design,
 exhaustive functional verification, logic synthesis, and gate-level
 verification of a 4-bit × 4-bit unsigned structural array multiplier. The
 intended project flow is RTL design and verification, logic synthesis, static
-timing analysis, and physical design. Timing and physical-design results
-remain placeholders until those stages are independently rerun and verified.
+timing analysis, and physical design. Physical-design results remain a
+placeholder until that stage is independently rerun and verified.
 
 The team information already associated with this project is:
 
@@ -338,8 +338,110 @@ architectural behavior. The compile warnings are captured in
 
 ## 4. Timing — Part C
 
-Part C will be documented after static timing analysis is independently rerun
-and verified. No Part C numerical result is claimed in this report.
+Part C was rerun with OpenSTA 3.1.0 using the fresh Part B SKY130A netlist and
+the same SKY130 typical Liberty corner used for synthesis.
+
+### 4.1 STA Environment
+
+| Item | Value |
+|---|---|
+| Container | `iic-osic-tools_xvnc` |
+| Project path in container | `/foss/designs/mult4_dvd` |
+| PDK root | `/foss/pdks` |
+| PDK | `sky130A` |
+| Standard-cell library | `sky130_fd_sc_hd` |
+| Liberty | `/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib` |
+| Netlist | `synth/mult_array_netlist.v` |
+| Clock port and input clock period | `clk`, 10.00 ns for the initial run |
+| Input delays | 1.0 ns on all non-clock inputs |
+| Output delay | 1.0 ns |
+
+The netlist cross-check confirmed top module `mult_array`, ports matching
+Part A, 16 mapped `dfrtp` flip-flops, active-low `RESET_B` connections, and
+no preserved `full_adder` hierarchy.
+
+### 4.2 STA Commands and Reports
+
+The rebuilt `sta/sta.tcl` reads the Liberty, reads the mapped netlist, links
+`mult_array`, creates `clk`, applies the input/output delays, reports worst
+maximum slack, and writes detailed maximum-delay checks. The period and
+report path are selected through environment variables so both required runs
+use the same script.
+
+The exact 10 ns command was:
+
+```bash
+cd /foss/designs/mult4_dvd
+env PDK_ROOT=/foss/pdks PDK=sky130A STD_CELL_LIBRARY=sky130_fd_sc_hd \
+  STA_PERIOD_NS=10.00 \
+  STA_REPORT_PATH=sta/mult_array_timing_10ns.rpt \
+  /foss/tools/bin/sta -exit sta/sta.tcl \
+  2>&1 | tee sta/part_c_10ns.log
+```
+
+The fresh output was `worst slack max 7.41`, and the detailed 10 ns report
+is preserved in `sta/mult_array_timing_10ns.rpt`.
+
+Using that measured slack:
+
+```text
+T_min = 10.00 ns − 7.41 ns = 2.59 ns
+F_max = 1000 / 2.59 ns = 386.10 MHz
+```
+
+The exact rounded-period command was:
+
+```bash
+cd /foss/designs/mult4_dvd
+env PDK_ROOT=/foss/pdks PDK=sky130A STD_CELL_LIBRARY=sky130_fd_sc_hd \
+  STA_PERIOD_NS=2.59 \
+  STA_REPORT_PATH=sta/mult_array_timing.rpt \
+  /foss/tools/bin/sta -exit sta/sta.tcl \
+  2>&1 | tee sta/part_c_tmin.log
+```
+
+The final detailed report is `sta/mult_array_timing.rpt`.
+
+### 4.3 Part C Results
+
+| Metric | Value |
+|---|---:|
+| Worst slack at T = 10 ns | 7.410 ns |
+| T_min | 2.590 ns |
+| F_max | 386.10 MHz |
+| Slack at T = T_min | Approximately 0 ns; OpenSTA summary `-0.00 ns`, detailed report `0.000 ns (VIOLATED)` because T_min was rounded to 2.59 ns |
+| Critical-path start point | `_087_` (`sky130_fd_sc_hd__dfrtp_1`) |
+| Critical-path end point | `_100_` (`sky130_fd_sc_hd__dfrtp_1`) |
+| Number of cells on critical path | 10 standard-cell instances |
+| Latency = 2 × T_min | 5.180 ns |
+| Throughput | 386.10 million results/s |
+
+The ordered path from the final report is:
+
+```text
+_087_  sky130_fd_sc_hd__dfrtp_1   launch flip-flop
+_039_  sky130_fd_sc_hd__clkinv_1
+_047_  sky130_fd_sc_hd__o311ai_0
+_050_  sky130_fd_sc_hd__a21oi_1
+_063_  sky130_fd_sc_hd__maj3_1
+_064_  sky130_fd_sc_hd__xnor2_1
+_073_  sky130_fd_sc_hd__maj3_1
+_075_  sky130_fd_sc_hd__maj3_1
+_079_  sky130_fd_sc_hd__xnor3_1
+_100_  sky130_fd_sc_hd__dfrtp_1   capture flip-flop
+```
+
+The reported data arrival time is 2.457 ns. The path contains 10 standard-cell
+instances including the launch and capture flip-flops, or 8 combinational
+standard cells between the registers. The final run prints `-0.00` for worst
+slack and the detailed report prints `0.000 ns (VIOLATED)`: this is the
+rounding boundary caused by using 2.59 ns to two decimal places, not a
+positive-slack result.
+
+The approximately `2N = 8` full-adder-delay estimate for a 4-bit array is an
+architectural comparison. The eight intervening cells above are technology-
+mapped standard cells after flattening; they are not eight preserved
+full-adder modules and their count must not be called a full-adder count.
 
 ## 5. Physical Design — Part D
 
@@ -367,9 +469,13 @@ original array contains 47 gates.
 
 ### Question 2
 
-```text
-[QUESTION 2 TODO: Complete after the remaining assignment stages are verified.]
-```
+The critical path launches at `_087_` (`sky130_fd_sc_hd__dfrtp_1`) and
+captures at `_100_` (`sky130_fd_sc_hd__dfrtp_1`). It contains 10 standard-cell
+instances including the two flip-flops, with 8 combinational standard cells
+between them and a reported data arrival time of 2.457 ns. The path is the
+technology-mapped implementation of the flattened arithmetic logic. The
+assignment's approximately `2N = 8` full-adder-delay estimate for `N = 4` is
+conceptual and is not a claim that the path contains eight full-adder cells.
 
 ### Question 3
 
@@ -384,15 +490,34 @@ of registered output (`p_reg`), for 16 flip-flops total. Because the
 combinational multiplier is small, the fixed area of these registers forms a
 large fraction of the total cell area.
 
-### Questions 4–6
+### Question 4
 
 ```text
-[QUESTIONS 4–6 TODO: Complete after Parts C–D are independently verified.]
+[QUESTION 4 TODO: Complete after Part D is independently verified.]
 ```
 
+### Question 5
+
 ```text
-[PART C/D TODO: Do not add timing or physical-design answers until those
-stages are independently verified.]
+[QUESTION 5 TODO: Complete after Part D is independently verified.]
+```
+
+### Question 6
+
+For the assignment's architectural scaling estimate at `N = 8`:
+
+```text
+AND operations       = N²       = 8² = 64
+Full adders          = N(N − 1) = 8(8 − 1) = 56
+Approx. critical path = 2N       = 2(8) = 16 full-adder delays
+```
+
+These are architectural scaling estimates from the structural-array formulas,
+not measured post-synthesis or post-route standard-cell counts.
+
+```text
+[PART D TODO: Do not add physical-design answers until Part D is independently
+verified.]
 ```
 
 ## 7. Conclusion
@@ -402,8 +527,9 @@ exhaustively verified over all 256 input combinations. The deliberate
 full-adder error produced the required 95-vector failure result, the correct
 equation was restored, and the final corrected simulation passed with zero
 errors. Part B then produced a fresh 63-cell SKY130A mapped netlist and a
-gate-level PASS over all 256 vectors. The 7 × 9 example and two-cycle
-waveform behavior are documented.
+gate-level PASS over all 256 vectors. Part C measured 7.410 ns worst slack at
+10.00 ns, a 2.590 ns minimum period, and 386.10 MHz maximum frequency. The
+7 × 9 example and two-cycle waveform behavior are documented.
 
 The Part A waveform annotation and final block-diagram figure remain manual
 evidence items. This report does not claim that the complete RTL-to-GDSII
