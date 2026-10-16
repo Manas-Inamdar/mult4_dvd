@@ -1,0 +1,12 @@
+{
+  "run": "experiments/physical-optimization/repair-fast/pnr/runs/repair_6p0",
+  "image": "hpretl/iic-osic-tools:2026.09",
+  "image_digest": "sha256:b87b3f1af9ba72d9486466ea777cf4248e96e20d9dba76d67259bc185db3859c",
+  "compatibility_fix": "scripts/fix-iic-sta-scenes.py",
+  "sha256": {
+    "pnr/config.json": "bc02461c86d59b4641ab1e9165d43a1e160390be3a46cff0479082cb3c54e2ce",
+    "pnr/metrics.json": "266c78f9d224072668956ec98d61655c19bcadb36fe3a2b50c9785c7578942e1",
+    "pnr/mult_array.gds": "ce95ebb0092607861e53a84d7314c9ba0d57a5ef0528795b43358b1ec8f851e4",
+    "pnr/mult_array_routed.v": "9ce12f0ce378a19d62368b594a2eca081bb6820be5f4e25ab3c298ad2747bc02"
+  }
+}

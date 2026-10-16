@@ -15,7 +15,7 @@ The team information already associated with this project is:
 - Soham Jahagirdar — Roll No. 2023102046
 
 The RTL is simulated with Icarus Verilog inside the existing
-`iic-osic-tools_xvnc` Docker container. The project is mounted at
+`mult4_dvd_iic` Docker container. The project is mounted at
 `/foss/designs/mult4_dvd` inside the container. GTKWave is available in the
 same environment for waveform inspection.
 
@@ -138,12 +138,13 @@ FAIL: 256 vectors checked, 95 errors
 ```
 
 The correct `a ^ b ^ cin` equation was restored, and the corrected simulation
-was run again with the PASS result shown above. No permanent terminal log was
-created; no log path is claimed here.
+was run again with the PASS result shown above. The current reproducible fault test is in `../setup/verify-improvements.sh`;
+its captured output is `../analysis/optimization-verification/error.log`.
 
 ### 2.6 Hand-Worked Example — A = 7, B = 9
 
-For the required personal example:
+For Manas Inamdar (roll 2023102052), the last digit is 2, giving A = 7
+and the specified exception B = 9:
 
 ```text
 A = 7 = 0111
@@ -185,7 +186,8 @@ The correct simulation generated `mult.vcd`. Its top-level waveform contains
 `clk`, `rst_n`, `a`, `b`, and `p`; the dump also contains `a_reg`, `b_reg`,
 `p_reg`, partial products, carries, sums, and full-adder signals.
 
-The inspected `A=7`, `B=9` transaction showed approximately:
+The historical `A=7`, `B=9` transaction showed approximately
+(the updated testbench drives on falling edges, so regenerate the figure):
 
 ```text
 input assignment  = 2437 ns
@@ -198,8 +200,8 @@ This demonstrates the required two-rising-edge latency.
 
 ```text
 [PART A FIGURE TODO: Insert the student-captured GTKWave screenshot with
-the two-cycle latency marked. A raw capture is currently available at
-pics/part_a/gtkwave_pic.png; this is not the annotated final figure.]
+the two-cycle latency marked. The old clone does not include this figure;
+regenerate it from the current testbench waveform.]
 ```
 
 ### 2.8 Block Diagram
@@ -246,7 +248,7 @@ changing the container's global environment.
 
 | Item | Value |
 |---|---|
-| Container | `iic-osic-tools_xvnc` |
+| Container | `mult4_dvd_iic` |
 | Project path in container | `/foss/designs/mult4_dvd` |
 | PDK root | `/foss/pdks` |
 | PDK | `sky130A` |
@@ -271,8 +273,8 @@ env PDK_ROOT=/foss/pdks PDK=sky130A STD_CELL_LIBRARY=sky130_fd_sc_hd \
 ```
 
 The generated artifacts are `synth/mult_array_netlist.v` and
-`synth/mult_array_stat.rpt`. The complete captured Yosys output is in
-`synth/part_b_synthesis.log`.
+`synth/mult_array_stat.rpt`. Reproduction logs on this machine are under
+`../analysis/docker-verification/synthesis/`.
 
 ### 3.3 Fresh Synthesis Results
 
@@ -288,6 +290,9 @@ The following values come from the regenerated `synth/mult_array_stat.rpt`:
 | Sequential area percentage | 54.05% |
 | Gate-level vectors checked | 256 |
 | Gate-level errors | 0 |
+| Most-used cell | `dfrtp_1`: 16 |
+| Second most-used cell | `nand2_1`: 8 |
+| Third most-used cell | `a21oi_1`: 6 |
 
 The 16 sequential bits are the four bits of `a_reg`, four bits of `b_reg`,
 and eight bits of `p_reg`. The logic-cell count is `63 − 16 = 47`, which is
@@ -312,7 +317,7 @@ The exact compile and run commands were:
 cd /foss/designs/mult4_dvd
 rm -rf /tmp/part_b_gate_run
 mkdir -p /tmp/part_b_gate_run
-/foss/tools/bin/iverilog -g2012 -Wall \
+/foss/tools/bin/iverilog -g2012 -Wall -DFUNCTIONAL '-DUNIT_DELAY=#1' \
   -o /tmp/part_b_gate_sim \
   tb/tb_mult.v synth/mult_array_netlist.v \
   /foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v \
@@ -332,9 +337,7 @@ PASS: 256 vectors checked, 0 errors
 No extra settling delay was required for this SKY130 functional-model run.
 The standard-cell models produced compile-time timescale and timing-expression
 warnings only; the testbench still observed the registered two-cycle
-architectural behavior. The compile warnings are captured in
-`synth/part_b_gate_compile.log`, and the gate-level result is captured in
-`synth/part_b_gate_sim.log`.
+architectural behavior. Current gate-level evidence is under `../analysis/optimization-verification/`.
 
 ## 4. Timing — Part C
 
@@ -345,7 +348,7 @@ the same SKY130 typical Liberty corner used for synthesis.
 
 | Item | Value |
 |---|---|
-| Container | `iic-osic-tools_xvnc` |
+| Container | `mult4_dvd_iic` |
 | Project path in container | `/foss/designs/mult4_dvd` |
 | PDK root | `/foss/pdks` |
 | PDK | `sky130A` |
@@ -445,143 +448,84 @@ full-adder modules and their count must not be called a full-adder count.
 
 ## 5. Physical Design — Part D
 
-Part D was redone from the assignment PDF using LibreLane v3.1.0.dev3 in the
-existing `iic-osic-tools_xvnc` container. The official runs use the two RTL
-source files required by the PDF and do not modify the verified Part A, Part B,
-or Part C source artifacts.
+The active implementation is the optimized RTL-based SKY130A run at **6.0 ns**.
+Its configuration, metrics, GDS and routed netlist all come from the same run.
+The original 6.5 ns configuration and results are preserved in `pnr/baseline/`.
+See [OPTIMIZATION.md](OPTIMIZATION.md) for experiments, tradeoffs and provenance.
 
-### 5.1 Existing PNR Audit
+### 5.1 Configuration and constraints
 
-The pre-existing runs `pnr/runs/RUN_2026-10-02_01-52-11` and
-`pnr/runs/RUN_2026-10-02_02-11-14` resolved to `ihp-sg13g2` with
-`sg13g2_stdcell`, even though the assignment requires SKY130A. The earlier
-`part_d_*` runs used the mapped Part B netlist and were also discarded because
-the PDF requires RTL input files. None of those runs, metrics, GDS files, or
-screenshots is used as official Part D evidence; all were retained for audit.
+The design still uses 16 partial-product AND operations, 12 explicit full adders,
+16 register bits, asynchronous active-low reset, and two-edge latency. The die
+remains 150 × 150 µm. No RTL or Part B/C artifacts were changed for optimization.
+`pnr/config.json` enables repair after global routing and increases timing and
+slew repair margins. It selects `max_ss_100C_1v60` as the default corner, retaining
+multi-corner setup/hold checks. These are physical-flow changes.
 
-### 5.2 PNR Configuration
+The assignment's initial period remains `ceil(1.2 × 2.59 / 0.5) × 0.5 = 3.5 ns`.
+The handover records the original default-flow sequence:
 
-The corrected active configuration is `pnr/config.json`:
+| Period (ns) | Historical setup slack (ns) |
+|---:|---:|
+| 3.5 | -2.029468 |
+| 4.0 | -1.529468 |
+| 4.5 | -1.028412 |
+| 5.0 | -0.528412 |
+| 5.5 | -0.145564 |
+| 6.0 | -0.151290 |
+| 6.5 | +0.041334 |
 
-| Setting | Value |
-|---|---|
-| Design and RTL inputs | `mult_array`, `../rtl/full_adder.v`, `../rtl/mult_array.v` |
-| PDK / standard-cell library | `sky130A` / `sky130_fd_sc_hd` |
-| Clock port | `clk` |
-| Floorplan sizing | Absolute, `DIE_AREA = [0, 0, 150, 150]` |
-| Final clock period in the active config | `6.5 ns` (initial attempt was `3.5 ns`) |
-| Liberty corner | `sky130_fd_sc_hd__tt_025C_1v80.lib` |
+The earlier six failed-run logs were not included in the clone; those numbers
+are historical README evidence. The new optimization sweep is separate and
+has complete local flow outputs under `../experiments/physical-optimization/`.
 
-Part C measured `T_min = 2.590 ns`. The initial Part D period was computed as
-`1.2 × 2.590 = 3.108 ns`, rounded up to the next 0.5 ns step, `3.5 ns`.
-Every LibreLane invocation explicitly selected `PDK_ROOT=/foss/pdks`,
-`PDK=sky130A`, and `STD_CELL_LIBRARY=sky130_fd_sc_hd`.
+### 5.2 Current results
 
-### 5.3 Clock-Period Attempts and Signoff
-
-Each period was run from the same RTL configuration, advancing by exactly
-0.5 ns after a setup failure. DRC is the pair of Magic and KLayout checks; LVS
-is the Netgen result.
-
-| Clock period | Setup WNS/slack (ns) | Max-slew count | DRC | LVS | Outcome |
-|---:|---:|---:|---:|---:|---|
-| 3.5 ns | -2.029468 | 11 | 0 | 0 | Setup failed |
-| 4.0 ns | -1.529468 | 11 | 0 | 0 | Setup failed |
-| 4.5 ns | -1.028412 | 11 | 0 | 0 | Setup failed |
-| 5.0 ns | -0.528412 | 11 | 0 | 0 | Setup failed |
-| 5.5 ns | -0.145564 | 11 | 0 | 0 | Setup failed |
-| 6.0 ns | -0.151290 | 11 | 0 | 0 | Setup failed |
-| **6.5 ns** | **+0.041334** | **11** | **0** | **0** | **PASS** |
-
-All seven runs reached final GDS/signoff metrics before the deferred setup
-checker determined the outcome; the first six were rejected for negative setup
-slack and 6.5 ns was the first passing setup result.
-
-The first successful RTL-based run is `pnr/runs/part_d_rtl_6p5`. Its final
-worst setup slack is `0.041334 ns` at the slow-slow 100 °C corner, with zero
-setup and hold violation counts. Magic DRC, KLayout DRC, and Netgen LVS all
-report zero errors. The metrics retain a max-slew count of 11; this is outside
-the PDF's stated success criteria and is reported here rather than hidden.
-
-The same-run artifacts copied for review are:
-
-- `pnr/metrics.json` — copied from `pnr/runs/part_d_rtl_6p5/final/metrics.json`.
-- `pnr/mult_array.gds` — copied from `pnr/runs/part_d_rtl_6p5/final/gds/mult_array.gds`.
-
-Both copies are non-empty and byte-for-byte identical to their source files.
-The run directories remain local evidence and are not part of the final
-artifact set.
-
-### 5.4 Part D Results Table
-
-| Metric | Value |
+| Metric | Optimized implementation |
 |---|---:|
-| CLOCK_PERIOD used | 6.5 ns |
-| Number of RTL-based runs needed | 7 |
+| Clock period | 6.0 ns |
+| Clock rate / throughput after pipeline fill | 166.67 MHz / million results per second |
 | Core area | 17,759.5 µm² |
-| Cells after synthesis (Part B) | 63 cells |
-| Cells after place and route | 1,893 instances |
-| Kinds of cells added | 1,301 decap, 257 fill, 245 tap, 22 buffers |
-| Routed wirelength | 2,334 µm |
-| Final setup slack | 0.041334 ns |
-| Post-route F_max | 154.83 MHz |
-| F_max from Part C | 386.10 MHz |
-| DRC errors | 0 |
+| Die area | 22,500 µm² |
+| Part B cells / area | 63 / 740.7104 µm² |
+| Final setup slack | +0.144724 ns |
+| Final hold slack | +0.123630 ns |
+| Setup / hold violation count | 0 / 0 |
+| Slew / capacitance / fanout violation count | 0 / 0 / 0 |
+| Magic / KLayout DRC errors | 0 / 0 |
 | LVS errors | 0 |
+| Standard-cell area, including taps and repair cells, excluding fill | 1,340.04 µm² |
+| Final cell instances, including physical support | 1,906 |
+| Routed wirelength | 2,494 µm |
+| Assignment's slack-derived post-route Fmax estimate | 170.79 MHz |
 
-The final die area is 22,500 µm² (150 µm × 150 µm), and reported instance
-utilization is 6.98887%.
+The frequency estimate is `1000 / (6.0 − 0.144724)`. The validated operating
+point is 6.0 ns; the estimate is not a separately routed/verified clock period.
+Part C uses the TT 25 °C, 1.8 V corner and ideal pre-layout interconnect. Physical
+signoff also considers slow/fast corners, routed parasitics and clock-tree delay.
+The 386.10 MHz Part C estimate and post-route result therefore differ in both
+analysis conditions and implementation stage.
 
-### 5.5 Cell Count and Physical Support
+### 5.3 Reproduce and inspect
 
-Part B mapped 63 cells: 16 flip-flops and 47 logic cells. The final RTL-based
-physical database contains 1,893 SKY130 standard-cell instances. The cell
-frequency report identifies 1,301 decap cells, 257 fill cells, and 245 tap
-cells. It also identifies 17 data timing-repair buffers, 3 clock buffers, and
-2 clock-delay buffers, or 22 buffers total.
+In the IIC 2026.09 container, apply the documented OpenSTA compatibility adapter
+once, then run from `/foss/designs/mult4_dvd`:
 
-The RTL-based LibreLane mapping itself contains 16 sequential cells, 49
-multi-input combinational cells, and 3 inverters before physical support is
-counted. This small mapping difference from the independently verified Part B
-count of 63 is a synthesis-flow mapping detail; the Part B result remains the
-assignment's baseline for the comparison table.
-
-Physical implementation adds support structures that are not represented by
-the Part B mapped-cell total. Decaps provide local charge storage for power
-integrity, fill cells satisfy layout density and continuity requirements, tap
-cells tie wells and substrate to the supply rails, and buffers/clock buffers
-repair fanout, transition, and clock-tree delay. The metrics' `fill_cell`
-classification includes both decap and fill masters, so those categories are
-reported from the cell-frequency report and must not be added to the total a
-second time.
-
-### 5.6 Post-Route Frequency and Part C Comparison
-
-Using the PDF's required calculation and the final measured slack:
-
-```text
-F_max,post-route = 1000 / (6.5 ns − 0.041334 ns)
-                 = 154.83 MHz
+```bash
+python3 scripts/fix-iic-sta-scenes.py
+python3 -m librelane --manual-pdk --pdk-root /foss/pdks \
+  -j 4 --run-tag optimized_6p0 pnr/config.json
+bash scripts/verify.sh pnr/mult_array_routed.v
 ```
 
-Part C reported `F_max = 386.10 MHz` from the pre-layout mapped-netlist STA.
-The post-route value is lower because placement, routed metal, and extracted
-resistance/capacitance add delay; clock and timing-repair buffers also add
-physical implementation delay. The two values therefore measure different
-stages of the flow.
+The adapter may require container root when modifying the installed tool files;
+see [OPTIMIZATION.md](OPTIMIZATION.md). It fixes scene-name API conversion and
+does not alter constraints, timing arithmetic or checks.
 
-### 5.7 KLayout Inspection
-
-The final RTL-based SKY130A GDS was rendered and visually inspected. The
-evidence views are:
-
-- `pics/part_d/klayout_whole_die.png` — whole-die view from the final run's
-  KLayout render.
-- `pics/part_d/klayout_zoomed.png` — zoomed view derived from that same final
-  KLayout render for detailed routing and cell inspection.
-
-The images correspond to `pnr/runs/part_d_rtl_6p5/final/gds/mult_array.gds`; no
-older IHP or mapped-netlist layout image is used.
+`pnr/signoff/` contains DRC/LVS reports, the resolved configuration and SHA-256
+provenance. `pics/part_d/klayout_whole_die.png` is the actual KLayout rendering
+of the selected run. The zoomed student screenshot, annotated waveform,
+block diagram and final `report/report.pdf` still need completion.
 
 ## 6. Answers to Questions 1–6
 
@@ -626,13 +570,12 @@ large fraction of the total cell area.
 
 ### Question 4
 
-The post-route maximum frequency is lower because placement, routed metal, and
-extracted parasitic resistance and capacitance add delay that is absent from
-the pre-layout Part C estimate: `154.83 MHz` after routing versus `386.10 MHz`
-from Part C. The final physical database adds 1,301 decap cells for local
-power storage, 257 fill cells for density and continuity, 245 tap cells for
-well/substrate ties, 17 data timing-repair buffers, 3 clock buffers, and 2
-clock-delay buffers for fanout, transition, skew, and clock-tree repair.
+The post-route frequency estimate is 170.79 MHz, versus 386.10 MHz in Part C.
+The latter uses the typical corner and ideal interconnect; physical signoff
+includes slower process/voltage/temperature corners, extracted wire RC and
+clock-tree effects. Fill, decap and tap cells support the physical layout;
+data buffers and clock buffers repair timing, transition and clock distribution.
+These physical support cells are additional to the mapped Part B logic.
 
 ### Question 5
 
@@ -656,23 +599,8 @@ Approx. critical path = 2N       = 2(8) = 16 full-adder delays
 These are architectural scaling estimates from the structural-array formulas,
 not measured post-synthesis or post-route standard-cell counts.
 
-Part D is complete for the verified 6.5 ns RTL-based SKY130A run. The run directories
-remain local evidence and are intentionally not included in the report's
-artifact list.
-
-## 7. Conclusion
-
-The structural 4-bit × 4-bit unsigned multiplier has been rebuilt and
-exhaustively verified over all 256 input combinations. The deliberate
-full-adder error produced the required 95-vector failure result, the correct
-equation was restored, and the final corrected simulation passed with zero
-errors. Part B then produced a fresh 63-cell SKY130A mapped netlist and a
-gate-level PASS over all 256 vectors. Part C measured 7.410 ns worst slack at
-10.00 ns, a 2.590 ns minimum period, and 386.10 MHz maximum frequency. Part D
-then completed the corrected RTL-based SKY130A physical-design run at 6.5 ns
-with positive setup slack and zero Magic/KLayout DRC and LVS errors. The 7 × 9 example, two-cycle waveform
-behavior, final GDS, and KLayout views are documented.
-
-The Part A waveform annotation and final block-diagram figure remain manual
-evidence items. The verified Part D run is complete; its generated run
-directories and intermediate logs remain local evidence.
+The optimized Part D implementation passes setup, hold, electrical checks,
+Magic/KLayout DRC and LVS. RTL, synthesized-netlist and routed-netlist functional
+tests pass all 256 inputs and consecutive-cycle/reset scenarios. The original
+baseline remains available for comparison. Submission figures and the final
+PDF remain outstanding.

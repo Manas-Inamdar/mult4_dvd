@@ -2,3 +2,6 @@ sim
 sim_error
 *.vcd
 *.gtkw
+
+# Physical-design intermediate runs (final views are tracked separately).
+pnr/runs/

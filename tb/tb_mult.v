@@ -37,10 +37,12 @@ module tb_mult;
         errors = 0;
 
         repeat (2) @(posedge clk);
+        @(negedge clk);
         rst_n = 1'b1;
 
         for (ai = 0; ai < 16; ai = ai + 1) begin
             for (bi = 0; bi < 16; bi = bi + 1) begin
+                @(negedge clk);
                 a = ai;
                 b = bi;
                 expected = ai * bi;
@@ -63,8 +65,10 @@ module tb_mult;
 
         if (errors == 0)
             $display("PASS: %0d vectors checked, %0d errors", vectors_checked, errors);
-        else
+        else begin
             $display("FAIL: %0d vectors checked, %0d errors", vectors_checked, errors);
+            $fatal(1, "Multiplier verification failed");
+        end
 
         $finish;
     end
