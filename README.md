@@ -127,8 +127,8 @@ vvp gls
 sta -exit sta/sta.tcl                       # T = 10 ns  -> worst slack max 7.41
 #   Tmin = 10 - 7.41 = 2.59 ns, Fmax = 1000 / 2.59 = 386.10 MHz
 STA_PERIOD_NS=2.59 sta -exit sta/sta.tcl    # T = Tmin   -> worst slack max -0.00
-#   detailed report: slack 0.000 ns; rounding Tmin to 0.01 ns lands exactly on the boundary
-#   (at 2.60 ns the slack is +0.01 ns). sta/mult_array_timing.rpt is this final 2.59 ns report.
+#   detailed report: slack 0.000 ns (-0.00025 ns at full precision); rounding Tmin to 0.01 ns
+#   lands just below the boundary (at 2.60 ns the slack is +0.01 ns). sta/mult_array_timing.rpt is this final 2.59 ns report.
 ```
 
 ### Part D — Physical design with LibreLane
@@ -175,7 +175,7 @@ cd ..
 ```
 
 Final run: setup slack +0.041 ns, hold slack +0.129 ns, post-route
-F<sub>max</sub> = 1000 / (6.5 − 0.041) = 154.83 MHz, 1893 instances, core area 17,759.5 µm²,
+F<sub>max</sub> = 1000 / (6.5 − 0.0413) = 154.83 MHz (the 6.5 ns clock itself is 153.85 MHz), 1893 instances, core area 17,759.5 µm²,
 wirelength 2334 µm, 0 DRC and 0 LVS errors. `metrics.json` also reports 11 max-slew violations
 in the slow corner, all on the reset net (one buffer drives 10 `RESET_B` pins with a 0.778 ns
 transition against a 0.75 ns limit). Reset recovery and removal still pass in that corner
