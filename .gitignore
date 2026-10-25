@@ -5,3 +5,8 @@ sim_error
 
 # Physical-design intermediate runs (final views are tracked separately).
 pnr/runs/
+gls
+
+# LaTeX source and figures stay local; only the built report.pdf is committed.
+report/*
+!report/report.pdf

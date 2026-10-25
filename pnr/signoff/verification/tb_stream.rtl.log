@@ -1,2 +1,0 @@
-PASS: 256 streaming vectors, pipeline drain, asynchronous reset, and two-edge 7x9 latency
-/foss/designs/mult4_dvd/tb/tb_stream.v:46: $finish called at 2627000 (1ps)

@@ -1,3 +1,0 @@
-VCD info: dumpfile mult.vcd opened for output.
-PASS: 256 vectors checked, 0 errors
-/foss/designs/mult4_dvd/tb/tb_mult.v:73: $finish called at 5147000 (1ps)
