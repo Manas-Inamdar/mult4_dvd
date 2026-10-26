@@ -134,7 +134,15 @@ STA_PERIOD_NS=2.59 sta -exit sta/sta.tcl    # T = Tmin   -> worst slack max -0.0
 ### Part D — Physical design with LibreLane
 
 Initial period: 1.2 × T<sub>min</sub> = 1.2 × 2.59 = 3.108 ns, rounded up to the next 0.5 ns =
-**3.5 ns**. Each attempt sets the period, runs the flow, and on a failure adds 0.5 ns:
+**3.5 ns**. `pnr/config.json` contains the required keys (plus `PDK` and `STD_CELL_LIBRARY`) and two
+electrical-repair settings; no timing constraints or exceptions are changed:
+
+| Key | Value | Effect |
+|---|---|---|
+| `RUN_POST_GRT_DESIGN_REPAIR` | `true` | repeat slew/capacitance/fanout repair after global routing, with real wire loads |
+| `GRT_DESIGN_REPAIR_MAX_SLEW_PCT` | `30` | keep 30 % slew margin in that repair (default 10 %), enough to cover the slow corner |
+
+Each attempt sets the period, runs the flow, and on a failure adds 0.5 ns:
 
 ```sh
 cd pnr
@@ -143,34 +151,6 @@ for T in 3.5 4.0 4.5 5.0 5.5 6.0 6.5; do
   librelane --run-tag run_$T config.json && break    # exits non-zero on timing violations
 done
 ```
-
-**Series 1 — required settings only.** The first sequence used a `config.json` containing only the
-required keys (plus `PDK` and `STD_CELL_LIBRARY`). It closed setup timing at 6.5 ns, but every run,
-including the passing one, left 11 maximum-slew violations at the slow corner:
-
-| Run | `CLOCK_PERIOD` (ns) | Setup slack, worst corner (ns) | Setup slack, tt corner (ns) | Max-slew violations | DRC (Magic / KLayout) | LVS | Result |
-|---:|---:|---:|---:|---:|:---:|---:|:---|
-| 1 | 3.5 | −2.029468 | +0.587 | 11 | 0 / 0 | 0 | setup violation |
-| 2 | 4.0 | −1.529468 | +1.087 | 11 | 0 / 0 | 0 | setup violation |
-| 3 | 4.5 | −1.028412 | +1.588 | 11 | 0 / 0 | 0 | setup violation |
-| 4 | 5.0 | −0.528412 | +2.088 | 11 | 0 / 0 | 0 | setup violation |
-| 5 | 5.5 | −0.145564 | +2.542 | 11 | 0 / 0 | 0 | setup violation |
-| 6 | 6.0 | −0.151290 | +2.887 | 11 | 0 / 0 | 0 | setup violation |
-| 7 | 6.5 | +0.041334 | +3.260 | 11 | 0 / 0 | 0 | timing passed, 11 slew violations |
-
-All 11 were on the reset net: the flow drove ten `RESET_B` pins from one weak clock-delay buffer
-(`clkdlybuf4s50_1`), giving a 0.778 ns transition against the 0.75 ns limit at `ss_100C_1v60`.
-LibreLane's electrical repair runs before routing, at the typical corner, so it never saw this.
-
-**Series 2 — final configuration.** `pnr/config.json` adds two electrical-repair settings to the
-required keys; no timing constraints or exceptions are changed:
-
-| Key | Value | Effect |
-|---|---|---|
-| `RUN_POST_GRT_DESIGN_REPAIR` | `true` | repeat slew/capacitance/fanout repair after global routing, with real wire loads |
-| `GRT_DESIGN_REPAIR_MAX_SLEW_PCT` | `30` | keep 30 % slew margin in that repair (default 10 %), enough to cover the slow corner |
-
-Running the same loop again from 3.5 ns gives:
 
 | Run | `CLOCK_PERIOD` (ns) | Setup slack, worst corner (ns) | Hold slack, worst corner (ns) | Setup slack, tt corner (ns) | Max-slew violations | DRC (Magic / KLayout) | LVS | Result |
 |---:|---:|---:|---:|---:|---:|:---:|---:|:---|
@@ -183,8 +163,15 @@ Running the same loop again from 3.5 ns gives:
 | 7 | **6.5** | **+0.041334** | +0.1286 | +3.260 | **0** | 0 / 0 | 0 | **passed** |
 
 Every timing failure is at the slow `ss_100C_1v60` corners. The flow is deterministic: rerunning a
-period reproduces these values exactly. The repair replaces the reset buffer with a `buf_2`, which
-removes all slew violations without changing the setup slack or the cell count.
+period reproduces these values exactly.
+
+**Slew violations found and fixed.** With only the required keys, the flow also closed timing at
+6.5 ns, but left 11 maximum-slew violations on the reset net: it drove ten `RESET_B` pins from one
+weak clock-delay buffer (`clkdlybuf4s50_1`), giving a 0.778 ns transition against the 0.75 ns limit
+at `ss_100C_1v60`. LibreLane's default electrical repair runs only before routing, so it missed them.
+The two repair settings above add a repair pass after global routing with 30 % slew margin, which
+replaces that buffer with a stronger `buf_2`. This removes all slew violations without changing the
+setup slack, the cell count or the critical path.
 
 Copy the final results and inspect them:
 
