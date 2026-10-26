@@ -20,7 +20,7 @@ SkyWater SKY130 (`sky130_fd_sc_hd`). Results tables, figures and answers are in
 | A — RTL | `PASS: 256 vectors checked, 0 errors`; error test (`sum = a ^ b`): `FAIL: 256 vectors checked, 95 errors` |
 | B — Synthesis | 63 cells (16 × `dfrtp_1`), 740.7104 µm², flip-flops 54.05 %; gate-level simulation PASS |
 | C — STA (tt corner) | WNS 7.41 ns at T = 10 ns → T<sub>min</sub> = 2.59 ns, F<sub>max</sub> = 386.10 MHz |
-| D — Place & route | `CLOCK_PERIOD` 6.5 ns after 7 runs; setup slack +0.041 ns; post-route F<sub>max</sub> 154.83 MHz; 0 DRC, 0 LVS |
+| D — Place & route | `CLOCK_PERIOD` 6.5 ns; setup slack +0.041 ns; post-route F<sub>max</sub> 154.83 MHz; 0 DRC, 0 LVS, 0 slew/cap/fanout violations |
 
 ## Repository structure
 
@@ -134,30 +134,57 @@ STA_PERIOD_NS=2.59 sta -exit sta/sta.tcl    # T = Tmin   -> worst slack max -0.0
 ### Part D — Physical design with LibreLane
 
 Initial period: 1.2 × T<sub>min</sub> = 1.2 × 2.59 = 3.108 ns, rounded up to the next 0.5 ns =
-**3.5 ns**. `pnr/config.json` contains only the required settings (plus `PDK` and
-`STD_CELL_LIBRARY`). Each attempt sets the period, runs the flow, and on a setup failure adds 0.5 ns:
+**3.5 ns**. Each attempt sets the period, runs the flow, and on a failure adds 0.5 ns:
 
 ```sh
 cd pnr
 for T in 3.5 4.0 4.5 5.0 5.5 6.0 6.5; do
   sed -i "s/\"CLOCK_PERIOD\": [0-9.]*/\"CLOCK_PERIOD\": $T/" config.json
-  librelane --run-tag run_$T config.json && break    # exits non-zero on setup violations
+  librelane --run-tag run_$T config.json && break    # exits non-zero on timing violations
 done
 ```
 
-| Run | `CLOCK_PERIOD` (ns) | Setup slack, worst corner (ns) | Setup slack, tt corner (ns) | DRC (Magic / KLayout) | LVS | Result |
-|---:|---:|---:|---:|:---:|---:|:---|
-| 1 | 3.5 | −2.029468 | +0.587 | 0 / 0 | 0 | setup violation |
-| 2 | 4.0 | −1.529468 | +1.087 | 0 / 0 | 0 | setup violation |
-| 3 | 4.5 | −1.028412 | +1.588 | 0 / 0 | 0 | setup violation |
-| 4 | 5.0 | −0.528412 | +2.088 | 0 / 0 | 0 | setup violation |
-| 5 | 5.5 | −0.145564 | +2.542 | 0 / 0 | 0 | setup violation |
-| 6 | 6.0 | −0.151290 | +2.887 | 0 / 0 | 0 | setup violation |
-| 7 | **6.5** | **+0.041334** | +3.260 | 0 / 0 | 0 | **passed** |
+**Series 1 — required settings only.** The first sequence used a `config.json` containing only the
+required keys (plus `PDK` and `STD_CELL_LIBRARY`). It closed setup timing at 6.5 ns, but every run,
+including the passing one, left 11 maximum-slew violations at the slow corner:
 
-Every failure is a setup violation in the slow `ss_100C_1v60` corner. The flow is deterministic:
-re-running all seven periods in a fresh container reproduces these slacks exactly, and the 6.5 ns
-GDS is geometrically identical (KLayout XOR) to the one from the first submission attempt.
+| Run | `CLOCK_PERIOD` (ns) | Setup slack, worst corner (ns) | Setup slack, tt corner (ns) | Max-slew violations | DRC (Magic / KLayout) | LVS | Result |
+|---:|---:|---:|---:|---:|:---:|---:|:---|
+| 1 | 3.5 | −2.029468 | +0.587 | 11 | 0 / 0 | 0 | setup violation |
+| 2 | 4.0 | −1.529468 | +1.087 | 11 | 0 / 0 | 0 | setup violation |
+| 3 | 4.5 | −1.028412 | +1.588 | 11 | 0 / 0 | 0 | setup violation |
+| 4 | 5.0 | −0.528412 | +2.088 | 11 | 0 / 0 | 0 | setup violation |
+| 5 | 5.5 | −0.145564 | +2.542 | 11 | 0 / 0 | 0 | setup violation |
+| 6 | 6.0 | −0.151290 | +2.887 | 11 | 0 / 0 | 0 | setup violation |
+| 7 | 6.5 | +0.041334 | +3.260 | 11 | 0 / 0 | 0 | timing passed, 11 slew violations |
+
+All 11 were on the reset net: the flow drove ten `RESET_B` pins from one weak clock-delay buffer
+(`clkdlybuf4s50_1`), giving a 0.778 ns transition against the 0.75 ns limit at `ss_100C_1v60`.
+LibreLane's electrical repair runs before routing, at the typical corner, so it never saw this.
+
+**Series 2 — final configuration.** `pnr/config.json` adds two electrical-repair settings to the
+required keys; no timing constraints or exceptions are changed:
+
+| Key | Value | Effect |
+|---|---|---|
+| `RUN_POST_GRT_DESIGN_REPAIR` | `true` | repeat slew/capacitance/fanout repair after global routing, with real wire loads |
+| `GRT_DESIGN_REPAIR_MAX_SLEW_PCT` | `30` | keep 30 % slew margin in that repair (default 10 %), enough to cover the slow corner |
+
+Running the same loop again from 3.5 ns gives:
+
+| Run | `CLOCK_PERIOD` (ns) | Setup slack, worst corner (ns) | Hold slack, worst corner (ns) | Setup slack, tt corner (ns) | Max-slew violations | DRC (Magic / KLayout) | LVS | Result |
+|---:|---:|---:|---:|---:|---:|:---:|---:|:---|
+| 1 | 3.5 | −2.031992 | −0.2267 | +0.586 | 0 | 0 / 0 | 0 | setup and hold violation |
+| 2 | 4.0 | −1.531991 | −0.1267 | +1.086 | 0 | 0 / 0 | 0 | setup and hold violation |
+| 3 | 4.5 | −1.028412 | −0.0271 | +1.588 | 0 | 0 / 0 | 0 | setup and hold violation |
+| 4 | 5.0 | −0.528412 | +0.0729 | +2.088 | 0 | 0 / 0 | 0 | setup violation |
+| 5 | 5.5 | −0.145564 | +0.1291 | +2.542 | 0 | 0 / 0 | 0 | setup violation |
+| 6 | 6.0 | −0.151290 | +0.1304 | +2.887 | 0 | 0 / 0 | 0 | setup violation |
+| 7 | **6.5** | **+0.041334** | +0.1286 | +3.260 | **0** | 0 / 0 | 0 | **passed** |
+
+Every timing failure is at the slow `ss_100C_1v60` corners. The flow is deterministic: rerunning a
+period reproduces these values exactly. The repair replaces the reset buffer with a `buf_2`, which
+removes all slew violations without changing the setup slack or the cell count.
 
 Copy the final results and inspect them:
 
@@ -167,17 +194,26 @@ cp runs/run_6.5/final/gds/mult_array.gds .
 python3 -c "
 import json; m = json.load(open('metrics.json'))
 for k in ['design__instance__count', 'design__core__area', 'route__wirelength', 'timing__setup__ws',
-          'magic__drc_error__count', 'klayout__drc_error__count', 'design__lvs_error__count',
-          'design__max_slew_violation__count']:
+          'timing__hold__ws', 'magic__drc_error__count', 'klayout__drc_error__count',
+          'design__lvs_error__count', 'design__max_slew_violation__count',
+          'design__max_cap_violation__count', 'design__max_fanout_violation__count']:
     print(f'{k:40s} {m[k]}')"
 klayout mult_array.gds                             # whole die; zoom into the cell rows and wires
 cd ..
 ```
 
 Final run: setup slack +0.041 ns, hold slack +0.129 ns, post-route
-F<sub>max</sub> = 1000 / (6.5 − 0.0413) = 154.83 MHz (the 6.5 ns clock itself is 153.85 MHz), 1893 instances, core area 17,759.5 µm²,
-wirelength 2334 µm, 0 DRC and 0 LVS errors. `metrics.json` also reports 11 max-slew violations
-in the slow corner, all on the reset net (one buffer drives 10 `RESET_B` pins with a 0.778 ns
-transition against a 0.75 ns limit). Reset recovery and removal still pass in that corner
-(+4.01 ns and +0.97 ns), and slew is not one of the assignment's pass criteria
-(0 DRC, 0 LVS, setup slack ≥ 0). `pnr/runs/` is not committed.
+F<sub>max</sub> = 1000 / (6.5 − 0.0413) = 154.83 MHz (the 6.5 ns clock itself is 153.85 MHz), 1893 instances,
+core area 17,759.5 µm², wirelength 2333 µm, 0 DRC and 0 LVS errors, and no slew, capacitance or
+fanout violations. Reset recovery and removal pass at the slow corner (+4.39 ns and +0.37 ns).
+The routed netlist (`runs/run_6.5/final/nl/mult_array.nl.v`) also passes the testbench:
+
+```sh
+CELLS=$PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/verilog
+iverilog -g2012 -DFUNCTIONAL -DUNIT_DELAY=#1 -o routed \
+  tb/tb_mult.v $CELLS/primitives.v $CELLS/sky130_fd_sc_hd.v pnr/runs/run_6.5/final/nl/mult_array.nl.v
+vvp routed
+#   PASS: 256 vectors checked, 0 errors
+```
+
+`pnr/runs/` is not committed.
